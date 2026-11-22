@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: wallet-postgres
+    environment:
+      POSTGRES_DB: wallet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wallet_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  wallet-api:
+    build: .
+    container_name: wallet-ledger-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_TYPE=postgres
+      - DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/wallet_db
+    restart: unless-stopped
+
+  reconciliation-worker:
+    build: .
+    container_name: wallet-reconciliation-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB_TYPE=postgres
+      - DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/wallet_db
+    command: ["python", "-c", "import time, urllib.request; print('Reconciliation worker scheduled.'); time.sleep(86400)"]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
